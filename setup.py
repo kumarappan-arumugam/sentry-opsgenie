@@ -69,7 +69,7 @@ setup(
             'sentry_opsgenie = sentry_opsgenie',
         ],
         'sentry.integrations': [
-            'sentry_opsgenie = sentry_opsgenie.integration:OpsgenieIntegration',
+            'sentry_opsgenie = sentry_opsgenie.integrations:OpsgenieIntegration',
         ],
     },
 )
