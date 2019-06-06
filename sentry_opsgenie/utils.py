@@ -147,13 +147,13 @@ def build_action_text(group, identity, action):
     )
 
 
-def build_alert_payload(group, team_id=None, user_id=None, event=None, tags=None, identity=None, actions=None, rules=None):
+def build_alert_payload(group, team_id=None, user_id=None, priority=None, event=None, tags=None, identity=None, actions=None, rules=None):
     status = group.get_status()
 
     members = get_member_assignees(group)
     teams = get_team_assignees(group)
 
-    priority = LEVEL_TO_PRIORITY.get(event.get_tag('level')) if event else 'P3'
+    priority = LEVEL_TO_PRIORITY.get(event.get_tag('level')) if not priority else priority
 
     description = build_attachment_text(group, event) or ''
 
@@ -278,10 +278,10 @@ def build_alert_payload(group, team_id=None, user_id=None, event=None, tags=None
             'Logger': group.logger,
             'Level': group.get_level_display(),
             'URL': group.get_absolute_url(params={'referrer': 'opsgenie'}),
-            'Timestamp': ts,
+            'Timestamp': str(ts),
             'Trigerring Rules': footer
         },
-        entity = entity,
+        entity = group.culprit,
         source = 'Sentry',
         priority = priority
     )

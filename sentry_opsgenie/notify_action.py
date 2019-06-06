@@ -10,12 +10,13 @@ from sentry.models import Integration
 from zenalerts import GetTeamRequest
 from zenalerts import GetUserRequest
 
-from .utils import build_alert_payload
+from .utils import ( build_alert_payload, LEVEL_TO_PRIORITY )
 
 class OpsgenieNotifyServiceForm(forms.Form):
     account = forms.ChoiceField(choices=(), widget=forms.Select())
-    team = forms.ChoiceField(choices=(), widget=forms.Select())
-    username = forms.CharField(widget=forms.TextInput())
+    # team = forms.ChoiceField(choices=(), widget=forms.Select())
+    team = forms.CharField(required=False, widget=forms.TextInput())
+    username = forms.CharField(required=False, widget=forms.TextInput())
     user_id = forms.HiddenInput()
     team_id = forms.HiddenInput()
     priority = forms.ChoiceField(choices=(), widget=forms.Select())
@@ -24,24 +25,38 @@ class OpsgenieNotifyServiceForm(forms.Form):
     def __init__(self, *args, **kwargs):
         # NOTE: Account maps directly to the integration ID
         account_list = [(i.id, i.name) for i in kwargs.pop('integrations')]
+        priorities = kwargs.pop('priorities', None)
         self.team_and_or_user_transformer = kwargs.pop('team_and_or_user_transformer')
-        # self.get_teams = kwargs.pop('get_teams')
-        # self.get_users = kwargs.pop('get_users')
 
+        # remove all the extra kwargs before calling super
         super(OpsgenieNotifyServiceForm, self).__init__(*args, **kwargs)
 
         if account_list:
             self.fields['account'].initial = account_list[0][0]
+            self.fields['account'].choices = account_list
+            self.fields['account'].widget.choices = self.fields['account'].choices
 
-        self.fields['account'].choices = account_list
-        self.fields['account'].widget.choices = self.fields['account'].choices
+        if priorities:
+            self.fields['priority'].initial = priorities[0][0]
+            self.fields['priority'].choices = priorities
+            self.fields['priority'].widget.choices = self.fields['priority'].choices
+
 
     def clean(self):
         cleaned_data = super(OpsgenieNotifyServiceForm, self).clean()
 
-        account = cleaned_data.get('account')
+        account = cleaned_data.get('account', None)
         team = cleaned_data.get('team', '')
         username = cleaned_data.get('username', '')
+
+        if not account:
+            raise forms.ValidationError(_("Pleasde select the account to send alerts to"),
+                                        code='invalid'
+                                    )
+        if not team and not username:
+            raise forms.ValidationError(_("Either username or team should be present to configure the alert"),
+                                        code='invalid'
+                                    )
 
         team_id, user_id = self.team_and_or_user_transformer(account, team, username)
 
@@ -78,10 +93,10 @@ class OpsgenieNotifyServiceForm(forms.Form):
 
 class OpsgenieNotifyServiceAction(EventAction):
     form_cls = OpsgenieNotifyServiceForm
-    label = u'Send an alert to the {account} Opsgenie account to {team} and(or) {username} and show tags {tags} in alert'
+    label = u'Send an alert to the Opsgenie account {account} routed via {team} team and {username} user and show {tags} tags in alert with {priority} priority'
 
     def __init__(self, *args, **kwargs):
-        super(OpsgenieNotifyServiceForm, self).__init__(*args, **kwargs)
+        super(OpsgenieNotifyServiceAction, self).__init__(*args, **kwargs)
         self.form_fields = {
             'account': {
                 'type': 'choice',
@@ -90,6 +105,14 @@ class OpsgenieNotifyServiceAction(EventAction):
             'team': {
                 'type': 'string',
                 'placeholder': 'i.e Infrastructure'
+            },
+            'username': {
+                'type': 'string',
+                'placeholder': 'i.e example@zenefits.com'
+            },
+            'priority': {
+                'type': 'choice',
+                'choices': self.get_priorities()
             },
             'tags': {
                 'type': 'string',
@@ -107,6 +130,7 @@ class OpsgenieNotifyServiceAction(EventAction):
         integration_id = self.get_option('account')
         team_id = self.get_option('team_id')
         user_id = self.get_option('user_id')
+        priority = self.get_option('priority')
         tags = set(self.get_tags_list())
 
         try:
@@ -121,13 +145,14 @@ class OpsgenieNotifyServiceAction(EventAction):
 
         def send_alert(event, futures):
             rules = [f.rule for f in futures]
-            payload = build_alert_payload(event.group, team_id, user_id, event=event, tags=tags, rules=rules)
+            payload = build_alert_payload(event.group, team_id, user_id, priority, event=event, tags=tags, rules=rules)
 
             client = integration.get_installation(organization_id=self.project.organization.id).get_client()
 
-            resp = client.alerts.create_alert(payload)
-            if not resp.get('ok'):
-                self.logger.info('rule.fail.opsgenie_post', extra={'error': resp.get('message')})
+            try:
+                client.alerts.create_alert(payload)
+            except Exception as e:
+                self.logger.info('rule.fail.opsgenie_post', extra={'error': e.message})
 
         key = u'opsgenie:{}:{}:{}'.format(integration_id, team_id, user_id)
 
@@ -148,13 +173,17 @@ class OpsgenieNotifyServiceAction(EventAction):
 
         return self.label.format(
             account=integration_name,
-            team=self.get_option('team'),
-            username=self.get_option('username'),
-            tags=u'[{}]'.format(', '.join(tags)),
+            team=self.get_option('team') or 'no',
+            username=self.get_option('username') or 'no',
+            priority=self.get_option('priority') or 'P3',
+            tags=u'[{}]'.format(', '.join(tags)) if len(tags)>0 else 'no',
         )
 
     def get_tags_list(self):
         return [s.strip() for s in self.get_option('tags', '').split(',')]
+
+    def get_priorities(self):
+        return [(v, k) for k, v in LEVEL_TO_PRIORITY.iteritems()]
 
     def get_integrations(self):
         return Integration.objects.filter(
@@ -166,6 +195,7 @@ class OpsgenieNotifyServiceAction(EventAction):
         return self.form_cls(
             self.data,
             integrations=self.get_integrations(),
+            priorities=self.get_priorities(),
             team_and_or_user_transformer=self.get_team_and_or_user_id,
         )
 
@@ -179,9 +209,6 @@ class OpsgenieNotifyServiceAction(EventAction):
         except Integration.DoesNotExist:
             return None
 
-        team_id = None
-        user_id = None
-
         client = integration.get_installation(organization_id=self.project.organization.id).get_client()
 
         try:
@@ -189,11 +216,13 @@ class OpsgenieNotifyServiceAction(EventAction):
             team_id = resp.id
         except Exception as e:
             self.logger.info('rule.opsgenie.team_list_failed', extra={'error': e.message})
+            team_id = None
 
         try:
             resp = client.users.get_user(GetUserRequest(identifier=username))
             user_id = resp.id
         except Exception as e:
             self.logger.info('rule.opsgenie.user_list_failed', extra={'error': e.message})
+            user_id = None
 
         return team_id, user_id
