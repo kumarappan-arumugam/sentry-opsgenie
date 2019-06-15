@@ -14,13 +14,14 @@ from sentry.identity.pipeline import IdentityProviderPipeline
 from sentry.integrations import (
     IntegrationInstallation, IntegrationFeatures, IntegrationMetadata, IntegrationProvider, FeatureDescription,
 )
-from sentry.pipeline import NestedPipelineView
-from sentry.pipeline import PipelineView
+from sentry.pipeline import (
+    PipelineView, NestedPipelineView
+)
 from sentry.utils.http import absolute_uri
 
-from zenalerts import ZenAlerts
-from zenalerts import Configuration as OpsgenieConfiguration
-from zenalerts import GetAccountRequest
+from opsgenie import OpsGenie
+from opsgenie import Configuration as OpsgenieConfiguration
+from opsgenie import GetAccountRequest
 
 DESCRIPTION = """
 Connect your Sentry organization to your Opsgenie app, and start
@@ -54,7 +55,7 @@ FEATURES = [
 
 setup_alert = {
     'type': 'info',
-    'text': 'The Opsgenie integration adds a new Alert Rule action to all projects. To enable automatic alerts sent to Opsgenie you must create a rule using the opsgenie workspace action in your project settings.',
+    'text': 'The Opsgenie integration adds a new Alert Rule action to all projects. To enable automatic alerts sent to Opsgenie you must create a rule using the opsgenie account action in your project settings.',
 }
 
 metadata = IntegrationMetadata(
@@ -129,11 +130,12 @@ class InstallationForm(forms.Form):
                     endpoint=self.cleaned_data.get('api_url')
                 )
 
-        client = ZenAlerts(config)
+        client = OpsGenie(config)
+        # this gets the account name and also serves as a test for the api_key
         try:
             account = client.accounts.get_account(GetAccountRequest())
         except Exception as e:
-            raise forms.ValidationError(_("API key/url is not functional, test failed with error %(error)s"),
+            raise forms.ValidationError(_("API key/url is not functional, test failed with error - %(error)s"),
                                         code='test-error',
                                         params={'error': e.message}
                                     )
@@ -172,11 +174,7 @@ class OpsgenieIntegration(IntegrationInstallation):
                     apikey=self.model.metadata['api_key'],
                     endpoint=self.model.metadata['api_url']
                 )
-        return ZenAlerts(config)
-        # return OpsgenieClient(
-        #     api_url=self.model.metadata['account']['api_url'],
-        #     api_key=self.model.metadata['account']['api_key'],
-        # )
+        return OpsGenie(config)
 
 class OpsgenieIntegrationProvider(IntegrationProvider):
     """
@@ -206,92 +204,8 @@ class OpsgenieIntegrationProvider(IntegrationProvider):
         'height': 900,
     }
 
-    # def _make_identity_pipeline_view(self):
-    #     """
-    #     Make the nested identity provider view. It is important that this view is
-    #     not constructed until we reach this step and the
-    #     ``oauth_config_information`` is available in the pipeline state. This
-    #     method should be late bound into the pipeline vies.
-    #     """
-    #     identity_pipeline_config = dict(
-    #         oauth_scopes=(),
-    #         redirect_url=absolute_uri('/extensions/opsgenie/setup/'),
-    #     )
-
-    #     return NestedPipelineView(
-    #         bind_key='identity',
-    #         provider_key='opsgenie',
-    #         pipeline_cls=IdentityProviderPipeline,
-    #         config=identity_pipeline_config,
-    #     )
-
-    # # def get_pipeline_views(self):
-    # #     views = super(OpsgenieIntegrationProvider, self).get_pipeline_views()
-    # #     views.append(InstallationConfigView())
-    # #     views.append(OpsgenieFinishedView())
-    # #     return views
-
     def get_pipeline_views(self):
-        return [InstallationConfigView(),
-
-                # The identity provider pipeline should be constructed at execution
-                # time, this allows for the oauth configuration parameters to be made
-                # available from the installation config view.
-                # lambda: self._make_identity_pipeline_view(),
-                OpsgenieFinishedView()]
-
-    def post_install(self, integration, organization):
-        # create a test opsgenie alert?
-        pass
-
-    # def get_installation_info(self, api_key, api_url):
-    #     payload = {
-    #         'token': access_token,
-    #     }
-
-    #     session = http.build_session()
-    #     resp = session.get('https://slack.com/api/team.info', params=payload)
-    #     resp.raise_for_status()
-    #     resp = resp.json()
-
-    #     return resp['team']
-
-    # def get_user_info(self, api_key, api_url):
-    #     payload = {
-    #         'token': user_token,
-    #     }
-
-    #     session = http.build_session()
-    #     resp = session.get('https://slack.com/api/auth.test', params=payload)
-    #     resp.raise_for_status()
-    #     resp = resp.json()
-
-    #     return resp['user_id']
-
-    # def build_integration(self, state):
-    #     identity = state['identity']['data']
-    #     assert identity['ok']
-
-    #     user = get_user_info(installation_data['api_key'], installation_data['api_url'])
-    #     installation = self.get_installation_info(
-    #         installation_data['api_key'],
-    #         installation_data['api_url']
-    #     )
-
-    #     return {
-    #         'name': installation['name'],
-    #         'external_id': u'{}:{}'.format(installation['team_name'], installation['team_id']),
-    #         'metadata': {
-    #             'api_key': installation_data['api_key'],
-    #             'api_url': installation_data['api_url'],
-    #         },
-    #         'user_identity': {
-    #             'type': 'opsgenie',
-    #             'external_id': user['id'],
-    #             'scopes': [], # Opsgenie do not have user scopes
-    #             'data': {},
-    #         },
-    #     }
+        return [InstallationConfigView(), OpsgenieFinishedView()]
 
     def build_integration(self, state):
         name = state['opsgenie'].get('name')

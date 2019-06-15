@@ -7,18 +7,21 @@ from sentry.rules.actions.base import EventAction
 from sentry.utils import metrics, json
 from sentry.models import Integration
 
-from zenalerts import GetTeamRequest
-from zenalerts import GetUserRequest
+from opsgenie import GetTeamRequest
+from opsgenie import GetUserRequest
 
 from .utils import ( build_alert_payload, LEVEL_TO_PRIORITY )
 
 class OpsgenieNotifyServiceForm(forms.Form):
     account = forms.ChoiceField(choices=(), widget=forms.Select())
-    # team = forms.ChoiceField(choices=(), widget=forms.Select())
+    # not making this a choice field to avoid perf hit
+    # instead doing a check on clean()
     team = forms.CharField(required=False, widget=forms.TextInput())
+    # not making this a choice field to avoid perf hit
+    # instead doing a check on clean()
     username = forms.CharField(required=False, widget=forms.TextInput())
-    user_id = forms.HiddenInput()
-    team_id = forms.HiddenInput()
+    user_id = forms.HiddenInput() # this will make a check if the user actually exists in clean()
+    team_id = forms.HiddenInput() # this will make a check if the team actually exists in clean()
     priority = forms.ChoiceField(choices=(), widget=forms.Select())
     tags = forms.CharField(required=False, widget=forms.TextInput())
 
@@ -50,7 +53,7 @@ class OpsgenieNotifyServiceForm(forms.Form):
         username = cleaned_data.get('username', '')
 
         if not account:
-            raise forms.ValidationError(_("Pleasde select the account to send alerts to"),
+            raise forms.ValidationError(_("Pleade select the account to send alerts to"),
                                         code='invalid'
                                     )
         if not team and not username:
@@ -108,7 +111,7 @@ class OpsgenieNotifyServiceAction(EventAction):
             },
             'username': {
                 'type': 'string',
-                'placeholder': 'i.e example@zenefits.com'
+                'placeholder': 'i.e example@example.com'
             },
             'priority': {
                 'type': 'choice',

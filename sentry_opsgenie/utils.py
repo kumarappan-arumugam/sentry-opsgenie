@@ -3,16 +3,10 @@ from __future__ import absolute_import
 import logging
 
 from sentry import tagstore
-from sentry.api.fields.actor import Actor
-from sentry.utils import json
-from sentry.utils.assets import get_asset_url
-from sentry.utils.dates import to_timestamp
-from sentry.utils.http import absolute_uri
 from sentry.models import (
-    GroupStatus, GroupAssignee, OrganizationMember, User, Identity, Team,
-    Release
+    GroupAssignee, User, Team
 )
-from zenalerts import CreateAlertRequest
+from opsgenie import CreateAlertRequest
 
 logger = logging.getLogger('sentry.integrations.opsgenie')
 
@@ -27,27 +21,9 @@ LEVEL_TO_PRIORITY = {
 
 def format_actor_option(actor):
     if isinstance(actor, User):
-        return {'text': actor.get_display_name(), 'value': u'user:{}'.format(actor.id)}
+        return actor.get_display_name()
     if isinstance(actor, Team):
-        return {'text': u'#{}'.format(actor.slug), 'value': u'team:{}'.format(actor.id)}
-
-    raise NotImplementedError
-
-
-def get_member_assignees(group):
-    queryset = OrganizationMember.objects.filter(
-        user__is_active=True,
-        organization=group.organization,
-        teams__in=group.project.teams.all(),
-    ).distinct().select_related('user')
-
-    members = sorted(queryset, key=lambda u: u.user.get_display_name())
-
-    return [format_actor_option(u.user) for u in members]
-
-
-def get_team_assignees(group):
-    return [format_actor_option(u) for u in group.project.teams.all()]
+        return actor.slug
 
 
 def get_assignee(group):
@@ -95,137 +71,15 @@ def build_attachment_text(group, event=None):
         return None
 
 
-def build_assigned_text(group, identity, assignee):
-    actor = Actor.from_actor_id(assignee)
-
-    try:
-        assigned_actor = actor.resolve()
-    except actor.type.DoesNotExist:
-        return
-
-    if actor.type == Team:
-        assignee_text = u'#{}'.format(assigned_actor.slug)
-    elif actor.type == User:
-        try:
-            assignee_ident = Identity.objects.get(
-                user=assigned_actor,
-                idp__type='opsgenie',
-                idp__external_id=identity.idp.external_id,
-            )
-            assignee_text = u'<@{}>'.format(assignee_ident.external_id)
-        except Identity.DoesNotExist:
-            assignee_text = assigned_actor.get_display_name()
-    else:
-        raise NotImplementedError
-
-    return u'*Issue assigned to {assignee_text} by <@{user_id}>*'.format(
-        assignee_text=assignee_text,
-        user_id=identity.external_id,
-    )
-
-
-def build_action_text(group, identity, action):
-    if action['name'] == 'assign':
-        return build_assigned_text(group, identity, action['selected_options'][0]['value'])
-
-    statuses = {
-        'resolved': 'resolved',
-        'ignored': 'ignored',
-        'unresolved': 're-opened',
-    }
-
-    # Resolve actions have additional 'parameters' after ':'
-    status = action['value'].split(':', 1)[0]
-
-    # Action has no valid action text, ignore
-    if status not in statuses:
-        return
-
-    return u'*Issue {status} by <@{user_id}>*'.format(
-        status=statuses[status],
-        user_id=identity.external_id,
-    )
-
-
 def build_alert_payload(group, team_id=None, user_id=None, priority=None, event=None, tags=None, identity=None, actions=None, rules=None):
-    status = group.get_status()
-
-    members = get_member_assignees(group)
-    teams = get_team_assignees(group)
 
     priority = LEVEL_TO_PRIORITY.get(event.get_tag('level')) if not priority else priority
-
     description = build_attachment_text(group, event) or ''
 
     if actions is None:
         actions = []
 
     assignee = get_assignee(group)
-
-    # resolve_button = {
-    #     'name': 'resolve_dialog',
-    #     'value': 'resolve_dialog',
-    #     'type': 'button',
-    #     'text': 'Resolve...',
-    # }
-
-    # ignore_button = {
-    #     'name': 'status',
-    #     'value': 'ignored',
-    #     'type': 'button',
-    #     'text': 'Ignore',
-    # }
-
-    # has_releases = Release.objects.filter(
-    #     projects=group.project,
-    #     organization_id=group.project.organization_id
-    # ).exists()
-
-    # if not has_releases:
-    #     resolve_button.update({
-    #         'name': 'status',
-    #         'text': 'Resolve',
-    #         'value': 'resolved',
-    #     })
-
-    # if status == GroupStatus.RESOLVED:
-    #     resolve_button.update({
-    #         'name': 'status',
-    #         'text': 'Unresolve',
-    #         'value': 'unresolved',
-    #     })
-
-    # if status == GroupStatus.IGNORED:
-    #     ignore_button.update({
-    #         'text': 'Stop Ignoring',
-    #         'value': 'unresolved',
-    #     })
-
-    # option_groups = []
-
-    # if teams:
-    #     option_groups.append({
-    #         'text': 'Teams',
-    #         'options': teams,
-    #     })
-
-    # if members:
-    #     option_groups.append({
-    #         'text': 'People',
-    #         'options': members,
-    #     })
-
-    # payload_actions = [
-    #     resolve_button,
-    #     ignore_button,
-    #     {
-    #         'name': 'assign',
-    #         'text': 'Select Assignee...',
-    #         'type': 'select',
-    #         'selected_options': [assignee],
-    #         'option_groups': option_groups,
-    #     },
-    # ]
 
     fields = []
 
@@ -239,11 +93,6 @@ def build_alert_payload(group, team_id=None, user_id=None, priority=None, event=
 
             labeled_value = tagstore.get_tag_value_label(key, value)
             fields.append('%s:%s' % (std_key.encode('utf-8'), labeled_value.encode('utf-8')))
-
-    if actions:
-        action_texts = filter(None, [build_action_text(group, identity, a) for a in actions])
-        text += '\n' + '\n'.join(action_texts)
-        payload_actions = []
 
     ts = group.last_seen
 
@@ -261,7 +110,7 @@ def build_alert_payload(group, team_id=None, user_id=None, priority=None, event=
 
     return CreateAlertRequest(
         message = build_attachment_title(group, event),
-        alias = 'sentry: %d' % group.id,
+        alias = 'sentry-%d' % group.id,
         description = description,
         responders = [
             {"id": team_id, "type": "team"},
@@ -270,6 +119,7 @@ def build_alert_payload(group, team_id=None, user_id=None, priority=None, event=
         # actions = ["Restart", "AnExampleAction"],
         tags = fields,
         details = {
+            'Assignee': str(assignee),
             'Sentry ID': str(group.id),
             'Sentry Group': getattr(group, 'message_short', group.message).encode('utf-8'),
             'Checksum': group.checksum,
@@ -277,7 +127,7 @@ def build_alert_payload(group, team_id=None, user_id=None, priority=None, event=
             'Project Name': group.project.name,
             'Logger': group.logger,
             'Level': group.get_level_display(),
-            'URL': group.get_absolute_url(params={'referrer': 'opsgenie'}),
+            'URL': group.get_absolute_url(params={'referrer': 'opsgenie'}), # don't foget to set system.url-prefix in config.yml
             'Timestamp': str(ts),
             'Trigerring Rules': footer
         },
