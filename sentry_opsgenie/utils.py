@@ -71,13 +71,10 @@ def build_attachment_text(group, event=None):
         return None
 
 
-def build_alert_payload(group, team_id=None, user_id=None, priority=None, event=None, tags=None, identity=None, actions=None, rules=None):
+def build_alert_payload(group, team_id=None, user_id=None, priority=None, event=None, tags=None, identity=None, actions=[], rules=None):
 
     priority = LEVEL_TO_PRIORITY.get(event.get_tag('level')) if not priority else priority
     description = build_attachment_text(group, event) or ''
-
-    if actions is None:
-        actions = []
 
     assignee = get_assignee(group)
 
@@ -116,10 +113,10 @@ def build_alert_payload(group, team_id=None, user_id=None, priority=None, event=
             {"id": team_id, "type": "team"},
             {"id": user_id, "type": "user"},
         ],
-        # actions = ["Restart", "AnExampleAction"],
+        actions = actions, # these are custom actions on opsgenie, example: ["Restart", "AnExampleAction"]
         tags = fields,
         details = {
-            'Assignee': str(assignee),
+            'Assignee': assignee or 'Not assigned to anyone yet',
             'Sentry ID': str(group.id),
             'Sentry Group': getattr(group, 'message_short', group.message).encode('utf-8'),
             'Checksum': group.checksum,

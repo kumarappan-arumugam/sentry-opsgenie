@@ -70,7 +70,7 @@ class OpsgenieNotifyServiceForm(forms.Form):
             }
 
             raise forms.ValidationError(
-                _('The opsgenie resource "%(team)s" does not exist or has not been granted access in the %(account)s Opsgenie account.'),
+                _('The opsgenie team "%(team)s" does not exist or has not been granted access in the %(account)s Opsgenie account.'),
                 code='invalid',
                 params=params,
             )
@@ -82,7 +82,7 @@ class OpsgenieNotifyServiceForm(forms.Form):
             }
 
             raise forms.ValidationError(
-                _('The opsgenie resource "%(user)s" does not exist or has not been granted access in the %(account)s Opsgenie account.'),
+                _('The opsgenie user "%(user)s" does not exist or has not been granted access in the %(account)s Opsgenie account.'),
                 code='invalid',
                 params=params,
             )
@@ -96,7 +96,7 @@ class OpsgenieNotifyServiceForm(forms.Form):
 
 class OpsgenieNotifyServiceAction(EventAction):
     form_cls = OpsgenieNotifyServiceForm
-    label = u'Send an alert to the Opsgenie account {account} routed via {team} team and {username} user and show {tags} tags in alert with {priority} priority'
+    label = u'Send an alert to the Opsgenie account {account} routed via {team} team and {username} user and show {tags} tag(s) in alert with {priority} priority'
 
     def __init__(self, *args, **kwargs):
         super(OpsgenieNotifyServiceAction, self).__init__(*args, **kwargs)

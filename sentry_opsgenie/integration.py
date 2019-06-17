@@ -37,12 +37,13 @@ FEATURES = [
         """,
         IntegrationFeatures.CHAT_UNFURL,
     ),
-    FeatureDescription(
-        """
-        Resolve, ignore, and assign issues with minimal context switching.
-        """,
-        IntegrationFeatures.ACTION_NOTIFICATION,
-    ),
+    # to be done - as this requires custom actions from opsgenie
+    # FeatureDescription(
+    #     """
+    #     Resolve, ignore, and assign issues with minimal context switching.
+    #     """,
+    #     IntegrationFeatures.ACTION_NOTIFICATION,
+    # ),
     FeatureDescription(
         """
         Configure rule based Opsgenie alerts to automatically be posted to a
@@ -192,7 +193,7 @@ class OpsgenieIntegrationProvider(IntegrationProvider):
     name = 'Opsgenie'
     metadata = metadata
     features = frozenset([
-        IntegrationFeatures.ACTION_NOTIFICATION,
+        # IntegrationFeatures.ACTION_NOTIFICATION, # to be done - as this requires custom actions from opsgenie
         IntegrationFeatures.CHAT_UNFURL,
         IntegrationFeatures.ALERT_RULE,
     ])
