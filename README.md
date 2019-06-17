@@ -5,7 +5,7 @@ Plugin for Sentry which allows sending notification via  [Opsgenie](https://www.
 ## Installation
 
 1.  Install this package
-	`pip install https://github.com/kumarappan-arumugam/sentry-opsgenie/archive/<version>.zip`
+	`pip install https://github.com/kumarappan-arumugam/sentry-opsgenie/archive/master.zip`
 2.  Restart your Sentry service.
 3.  Go to your Sentry web interface. Open  organization `Settings`  page.
 4.  On  `Integrations`, find  `Opsgneie`  plugin and install it.
