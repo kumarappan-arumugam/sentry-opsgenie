@@ -1,2 +1,2 @@
 setuptools>=20.3.1
-opsgenie @ https://github.com/kumarappan-arumugam/opsgenie-py/archive/1.0.zip
+opsgenie @ https://github.com/kumarappan-arumugam/opsgenie-py/archive/master.zip
